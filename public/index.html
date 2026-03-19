@@ -17,7 +17,7 @@
     <style>
         :root {
             --bg-color: #121212;
-            --accent-color: #88c47c; /* Match your manifest theme */
+            --accent-color: #88c47c;
             --btn-color: #333;
             --audio-color: #ff9100;
             --text-color: #ffffff;
@@ -34,10 +34,9 @@
             justify-content: center;
             height: 100vh;
             overflow: hidden;
-            /* Prevent scrolling/bounce on mobile */
             position: fixed; 
             width: 100%;
-            touch-action: none;
+            touch-action: none; /* Critical: prevents browser gestures */
         }
 
         #status {
@@ -76,23 +75,22 @@
             align-items: center;
             justify-content: center;
             box-shadow: 0 6px 0 #000;
-            transition: all 0.1s;
+            transition: all 0.05s; /* Faster transition for instant feedback */
             user-select: none;
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
         }
 
-        /* Press Effect */
-        .btn:active {
-            background: var(--accent-color);
-            color: black;
+        /* Manual Active State (Triggered by JS) */
+        .btn.is-active {
+            background: var(--accent-color) !important;
+            color: black !important;
             transform: translateY(4px);
-            box-shadow: 0 2px 0 #000;
+            box-shadow: 0 2px 0 #000 !important;
         }
 
         .empty { background: transparent; box-shadow: none; }
 
-        /* Central Image Styling */
         .grid-center {
             display: flex;
             align-items: center;
@@ -110,7 +108,6 @@
             transition: border-color 0.3s ease;
         }
 
-        /* Audio Button Styling */
         .btn-audio {
             margin-top: 45px;
             width: 180px;
@@ -122,15 +119,15 @@
             box-shadow: 0 6px 0 #b36500;
         }
 
-        .btn-audio:active {
+        /* Logic for audio active state */
+        .btn-audio.is-active {
+            background: #e68200 !important;
             transform: translateY(4px);
-            box-shadow: 0 2px 0 #000;
+            box-shadow: 0 2px 0 #000 !important;
         }
     </style>
 </head>
-<body ontouchstart="">
-
-    <div id="status">Status: Disconnected</div>
+<body ontouchstart=""> <div id="status">Status: Disconnected</div>
 
     <div class="controller-grid">
         <div class="empty"></div>
@@ -151,13 +148,16 @@
     <button class="btn btn-audio" id="btn-5">PLAY AUDIO 🎵</button>
 
     <script>
-        // Connect to Socket.io server (Empty string auto-detects current host)
         const socket = io(); 
         const statusEl = document.getElementById('status');
         const joeyImg = document.getElementById('joey-img');
         let activeInterval = null;
 
-        // Connection Events
+        // Feedback: Vibration (Works on Android)
+        const vibrate = (ms = 20) => {
+            if (navigator.vibrate) navigator.vibrate(ms);
+        };
+
         socket.on('connect', () => {
             statusEl.innerText = "Robo Joey: Online";
             statusEl.classList.add('connected');
@@ -170,20 +170,14 @@
             joeyImg.style.borderColor = "var(--btn-color)";
         });
 
-        /**
-         * Sends movement command to the server
-         * @param {number} cmd - Command ID (1:Up, 2:Down, 3:Right, 4:Left, 0:Stop)
-         */
         function sendCommand(cmd) {
             if (cmd === 0) {
                 clearInterval(activeInterval);
                 activeInterval = null;
                 socket.emit('move', 0);
             } else {
-                if (activeInterval) return; // Prevent multiple intervals
-                
-                socket.emit('move', cmd); // Send immediately
-                // Keep sending every 50ms for ESP32 watchdog
+                if (activeInterval) return;
+                socket.emit('move', cmd);
                 activeInterval = setInterval(() => {
                     socket.emit('move', cmd);
                 }, 50);
@@ -191,42 +185,58 @@
         }
 
         /**
-         * Binds touch and mouse events to buttons
+         * Enhanced binding for instant mobile feedback
          */
         function bindButton(id, cmd) {
             const btn = document.getElementById('btn-' + id);
             
-            // Mobile Touch Events
+            // Touch handlers
             btn.addEventListener('touchstart', (e) => { 
-                e.preventDefault(); 
+                e.preventDefault();
+                vibrate();
+                btn.classList.add('is-active');
                 sendCommand(cmd); 
             });
             btn.addEventListener('touchend', (e) => { 
-                e.preventDefault(); 
+                e.preventDefault();
+                btn.classList.remove('is-active');
                 sendCommand(0); 
             });
-            
-            // Desktop Mouse Events
-            btn.addEventListener('mousedown', () => sendCommand(cmd));
-            btn.addEventListener('mouseup', () => sendCommand(0));
-            btn.addEventListener('mouseleave', () => { if(activeInterval) sendCommand(0); });
+
+            // Mouse handlers (for PC testing)
+            btn.addEventListener('mousedown', () => {
+                btn.classList.add('is-active');
+                sendCommand(cmd);
+            });
+            btn.addEventListener('mouseup', () => {
+                btn.classList.remove('is-active');
+                sendCommand(0);
+            });
+            btn.addEventListener('mouseleave', () => {
+                btn.classList.remove('is-active');
+                if(activeInterval) sendCommand(0);
+            });
         }
 
-        // Initialize directional buttons (1-4)
         [1, 2, 3, 4].forEach(id => bindButton(id, id));
 
-        // Special handling for Audio (Trigger once on click/tap)
+        // Audio Button Logic (One-shot trigger)
         const audioBtn = document.getElementById('btn-5');
-        const triggerAudio = (e) => {
+        const handleAudio = (e) => {
             e.preventDefault();
+            vibrate(50);
+            audioBtn.classList.add('is-active');
             socket.emit('move', 5);
-            // Small timeout to send a Stop command after the trigger
-            setTimeout(() => socket.emit('move', 0), 100);
+            
+            setTimeout(() => {
+                audioBtn.classList.remove('is-active');
+                socket.emit('move', 0);
+            }, 150);
         };
-        audioBtn.addEventListener('touchstart', triggerAudio);
-        audioBtn.addEventListener('mousedown', triggerAudio);
 
-        // Service Worker registration for PWA features
+        audioBtn.addEventListener('touchstart', handleAudio);
+        audioBtn.addEventListener('mousedown', handleAudio);
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js').catch(() => {});
