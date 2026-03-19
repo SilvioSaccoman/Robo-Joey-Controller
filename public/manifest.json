@@ -1,0 +1,17 @@
+{
+  "name": "Robo Joey",
+  "short_name": "Robo Joey",
+  "description": "Controller for Robo Joey",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#88c47c",
+  "icons": [
+    {
+      "src": "joey-cover.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
